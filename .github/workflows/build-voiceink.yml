@@ -1,0 +1,46 @@
+name: Build VoiceInk (free local build)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 240
+    steps:
+      - name: Check out upstream VoiceInk v2.27
+        uses: actions/checkout@v4
+        with:
+          repository: Beingpax/VoiceInk
+          ref: v2.27
+          persist-credentials: false
+
+      - name: Select newest Xcode
+        run: |
+          ls /Applications | grep -i xcode || true
+          XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          echo "Using $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          swift --version
+
+      - name: Build with make local (ad-hoc signing)
+        run: make local LOCAL_CODESIGN_IDENTITY=-
+
+      - name: Package VoiceInk.app
+        run: |
+          cd "$HOME/Downloads"
+          ditto -c -k --sequesterRsrc --keepParent VoiceInk.app VoiceInk-v2.27-local.zip
+          ls -lh VoiceInk-v2.27-local.zip
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create local-v2.27 "$HOME/Downloads/VoiceInk-v2.27-local.zip" --title "VoiceInk v2.27 - free local build (ad-hoc signed)" --notes "Built from upstream Beingpax/VoiceInk tag v2.27 with make local (ad-hoc signing). Local build limitations: no iCloud dictionary sync, no automatic updates." || gh release upload local-v2.27 "$HOME/Downloads/VoiceInk-v2.27-local.zip" --clobber
